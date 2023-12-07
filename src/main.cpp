@@ -5,14 +5,16 @@
 #include "ESPAsyncWebServer.h" // Make sure to include Husarnet before this.
 #include <ESPmDNS.h> // Allows to resolve hostnames to IP addresses within a local network.
 #include "AsyncElegantOTA.h" // Over the air updates for the ESP32.
-#include "ESPConnect.h" // ESPConnect library for the web serve
+#include "ESPConnect.h" // ESPConnect library for the web server
+#include <ESPDash.h> // Web UI for data visualization           
+
 struct SystemData {
 	double current;
 };
 
 SystemData systemData;
 TaskHandle_t wifiConnectionTaskHandle = nullptr;
-TaskHandle_t ledBlinkerTaskHandle = nullptr;
+TaskHandle_t ledBlinkerTaskHandle = nullptr;                    
 
 //Event group for task synchronization
 EventGroupHandle_t system_events;
@@ -22,6 +24,8 @@ EventGroupHandle_t system_events;
 #define SERVER_CONNECTED_BIT BIT2
 
 AsyncWebServer server(80);
+ESPDash dashboard(&server); 
+Card current_progress = Card(&dashboard, PROGRESS_CARD, "Corrente", "A", 0, 255);
 
 enum BlinkRate : uint32_t {
     Slow = 2000,
@@ -66,11 +70,10 @@ void LedBlinkerTask(void* parameter) {
     }
 }
 
-
 void NetworkConnectionTask(void* parameter) {
     
     //Configure SSID and password for configuration portal
-    ESPConnect.autoConnect("", "", 180000);
+    ESPConnect.autoConnect("Medidor", "", 180000);
 
     /* 
     Begin connecting to previous WiFi
@@ -83,11 +86,6 @@ void NetworkConnectionTask(void* parameter) {
     } else {
         Serial.println("Failed to connect to WiFi");
     }
-
-
-    server.on("/", HTTP_GET, [&](AsyncWebServerRequest *request){
-        request->send(200, "text/plain", "Medidor de corrente");
-    });
 
 	server.on("/current", HTTP_GET, [&](AsyncWebServerRequest *request) {
 		request->send(200, "text/plain", String(systemData.current));
@@ -170,6 +168,9 @@ void PowerMeasurerTask(void *parameter) {
                           current, calibrated_current);
         }
 
+        current_progress.update((float)calibrated_current);
+        dashboard.sendUpdates();
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
@@ -179,11 +180,12 @@ void setup() {
 	Serial.println("Starting HouseMeasurer");
 	system_events = xEventGroupCreate();
     xTaskCreate(LedBlinkerTask, "LedBlinkerTask", 10000, NULL, 1, &ledBlinkerTaskHandle);
-    xTaskCreate(NetworkConnectionTask, "NetworkConnectionTask", 10000, NULL, 1, &wifiConnectionTaskHandle);
+    xTaskCreate(NetworkConnectionTask, "NetworkConnectionTask", 10000, NULL, 2, &wifiConnectionTaskHandle);
 	xTaskCreate(PowerMeasurerTask, "PowerMeasurerTask", 4096, NULL, 1, NULL);
 
 }
 
 void loop() {
 
+    vTaskDelay(1000);
 }
